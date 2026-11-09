@@ -39,12 +39,20 @@ public class Playercontroller : MonoBehaviour
         if (GameFacade.Instance == null || !GameFacade.Instance.IsGameplayActive) return;
 
         float horizontal = Input.GetAxisRaw("Horizontal");
+        if (TouchControls.Instance != null && TouchControls.Instance.IsVisible)
+        {
+            horizontal = Mathf.Clamp(horizontal + TouchControls.Instance.Horizontal, -1f, 1f);
+        }
+
         Vector3 position = transform.position;
         position.x = Mathf.Clamp(position.x + horizontal * speed * Time.deltaTime, -XRange, XRange);
         position.z = fixedZ;
         transform.position = position;
 
-        if (Input.GetKey(KeyCode.Space) && Time.time >= nextFireTime)
+        bool fireHeld = Input.GetKey(KeyCode.Space)
+            || (TouchControls.Instance != null && TouchControls.Instance.FireHeld);
+
+        if (fireHeld && Time.time >= nextFireTime)
         {
             Fire();
             nextFireTime = Time.time + fireCooldown;

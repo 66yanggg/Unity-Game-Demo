@@ -46,6 +46,13 @@ A / D 或 ← / →    左右移动
 按住空格           连续发射食物
 鼠标左键           点击结算界面上的“下一关”“重试本关”“退出游戏”等按钮
 
+手机 / 网页版：
+- 左下角“左”“右”按钮：按住移动。
+- 右下角“射击”按钮：按住连续发射。
+- 结算界面的按钮已加大，方便手指点击。
+- WebGL 版点击“打开主页”会打开 https://66yanggg.github.io；
+  Windows exe 点击“退出游戏”会正常退出程序。
+
 补充说明：
 - 玩家活动范围约为 X = -17 到 X = 17。
 - 射击有 0.14 秒冷却，按住空格即可连续射击。
@@ -140,7 +147,8 @@ A / D 或 ← / →    左右移动
 - 第 1~4 关完成：“下一关”
 - 第 5 关完成：“再玩一次”
 - 失败：“重试本关”
-- “退出游戏”：编辑器中停止 Play，打包后退出程序
+- “退出游戏”：编辑器中停止 Play；Windows exe 退出程序；
+  WebGL 版本显示为“打开主页”，点击打开 https://66yanggg.github.io
 
 
 八、项目结构
@@ -180,6 +188,11 @@ My project (1)/
 └─ README.text                         本说明文件
 
 补充：
+- TMP 中文字体资产：Assets/Resources/Fonts/GameChineseFont.asset
+  使用 2048 x 2048 的静态 SDF 图集，包含中文字符、数字和符号。
+  可通过菜单 Tools/TextMeshPro/重建游戏中文 TMP 字体 重新生成。
+- WebGL 构建输出目录：docs/（GitHub Pages 使用）。
+  可通过菜单 Tools/WebGL/构建网页版到 docs 重新构建。
 - LocalAssetFactory.cs 和 RemoteAssetFactory.cs 是早期预留的工厂实现，
   当前版本没有使用；实际使用的是 ResourcesAssetFactory + ProxyAssetFactory。
 - GameController 在运行时把 LevelManager 添加到 Canvas 上。
@@ -289,7 +302,7 @@ A：当前版本是单次游戏流程，不保存关卡进度；
 
 十二、素材与版权
 ----------------------------------------------------------------------
-- 动物、场景、材质等美术资源来自项目内的 Course Library，
+动物、场景、材质等美术资源来自项目内的 Course Library，
   由 Synty Studios 提供，仅限非商业使用。
   如需用于商业项目，请购买 Synty Studios 的正式 Asset Store 资源包。
   原始许可说明：
@@ -299,6 +312,10 @@ A：当前版本是单次游戏流程，不保存关卡进度；
   如果要将本项目公开发布或商用，请自行确认这些音频/图片的授权范围。
 
 - Unity 内置 UI、字体回退和引擎相关资源遵循 Unity 自身许可。
+
+- TMP 中文字体使用 Noto Sans SC（SIL Open Font License 1.1），
+  源文件位于 Assets/FontsSource/NotoSansSC-Regular.otf，
+  许可文本位于 Assets/FontsSource/OFL.txt。
 
 
 十三、版本信息

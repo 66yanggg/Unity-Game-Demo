@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 #if UNITY_EDITOR
@@ -8,29 +9,31 @@ using UnityEditor;
 
 /// <summary>
 /// 游戏 UI 与状态控制：玩家血量、分数、关卡 HUD、过关/失败结算。
-/// 出怪与关卡数值由 LevelManager 负责，这里不直接处理生成逻辑。
+/// 所有运行时文字使用 TextMeshPro，并统一使用项目内置的中文字体图集，
+/// 避免 WebGL 下因为缺少系统中文字体而出现空白。
 /// </summary>
 public class GameController : MonoBehaviour
 {
     private Transform hearts;
-    private Text scoreText;
+    private TextMeshProUGUI scoreText;
     private Transform endPanel;
     private Image resultImage;
-    private Text resultText;
-    private Text resultSubText;
+    private TextMeshProUGUI resultText;
+    private TextMeshProUGUI resultSubText;
     private Button primaryButton;
     private Button exitButton;
-    private Text primaryLabel;
-    private Text exitLabel;
+    private TextMeshProUGUI primaryLabel;
+    private TextMeshProUGUI exitLabel;
 
     private GameObject hudRoot;
-    private Text levelText;
-    private Text targetText;
-    private Text hintText;
-    private Font uiFont;
+    private TextMeshProUGUI levelText;
+    private TextMeshProUGUI targetText;
+    private TextMeshProUGUI hintText;
+    private TMP_FontAsset uiFont;
 
     private LevelManager levelManager;
     private Playercontroller playerController;
+    private TouchControls touchControls;
 
     private int maxHp;
     private int hpValue;
@@ -52,6 +55,8 @@ public class GameController : MonoBehaviour
 
     private void Start()
     {
+        uiFont = LoadTmpFont();
+
         if (!CacheSceneUi())
         {
             enabled = false;
@@ -59,6 +64,8 @@ public class GameController : MonoBehaviour
         }
 
         BuildHud();
+        CreateTouchControls();
+        StartCoroutine(ApplyOutlinesWhenReady());
 
         levelManager = GetComponent<LevelManager>();
         if (levelManager == null)
@@ -75,11 +82,26 @@ public class GameController : MonoBehaviour
         StartCoroutine(BeginGameRoutine());
     }
 
+    private TMP_FontAsset LoadTmpFont()
+    {
+        TMP_FontAsset font = Resources.Load<TMP_FontAsset>("Fonts/GameChineseFont");
+        if (font == null)
+        {
+            Debug.LogError("[TMP] 找不到 Assets/Resources/Fonts/GameChineseFont.asset，" +
+                           "请先执行 Tools/TextMeshPro/重建游戏中文 TMP 字体。");
+            font = TMP_Settings.defaultFontAsset;
+        }
+        return font;
+    }
+
     private bool CacheSceneUi()
     {
+        // 场景原本使用的是旧版 Text，这里在运行时全部替换为 TMP。
+        ConvertLegacyTexts();
+
         hearts = transform.Find("HpImg");
         Transform scoreRoot = transform.Find("ScoreText/score");
-        scoreText = scoreRoot != null ? scoreRoot.GetComponent<Text>() : null;
+        scoreText = scoreRoot != null ? scoreRoot.GetComponent<TextMeshProUGUI>() : null;
         endPanel = transform.Find("endPanel");
 
         if (hearts == null || scoreText == null || endPanel == null)
@@ -101,34 +123,93 @@ public class GameController : MonoBehaviour
             return false;
         }
 
-        primaryLabel = primaryButton.GetComponentInChildren<Text>(true);
-        exitLabel = exitButton.GetComponentInChildren<Text>(true);
+        primaryLabel = primaryButton.GetComponentInChildren<TextMeshProUGUI>(true);
+        exitLabel = exitButton.GetComponentInChildren<TextMeshProUGUI>(true);
 
         primaryButton.onClick.RemoveAllListeners();
         primaryButton.onClick.AddListener(OnPrimaryClicked);
         exitButton.onClick.RemoveAllListeners();
         exitButton.onClick.AddListener(OnExitClicked);
 
+        // 移动端 / 网页上把结算按钮做得更大，方便手指点击。
+        ResizeButton(primaryButton, new Vector2(260f, 80f), new Vector2(-170f, -150f));
+        ResizeButton(exitButton, new Vector2(260f, 80f), new Vector2(170f, -150f));
+
+        if (primaryLabel != null) primaryLabel.fontSize = 30f;
+        if (exitLabel != null) exitLabel.fontSize = 30f;
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        if (exitLabel != null) exitLabel.text = "打开主页";
+#else
+        if (exitLabel != null) exitLabel.text = "退出游戏";
+#endif
+
         playerController = FindObjectOfType<Playercontroller>();
 
         // 原分数文字是深灰色，这里加白字和描边，保证在草地背景上清晰。
-        Text scoreLabel = scoreText.transform.parent.GetComponent<Text>();
+        TextMeshProUGUI scoreLabel = scoreText.transform.parent.GetComponent<TextMeshProUGUI>();
         if (scoreLabel != null)
         {
             scoreLabel.color = Color.white;
-            AddOutline(scoreLabel);
         }
         scoreText.color = Color.white;
-        AddOutline(scoreText);
 
         resultImage.preserveAspect = true;
         return true;
     }
 
+    private void ConvertLegacyTexts()
+    {
+        Text[] legacyTexts = GetComponentsInChildren<Text>(true);
+        for (int i = 0; i < legacyTexts.Length; i++)
+        {
+            ConvertLegacyText(legacyTexts[i]);
+        }
+    }
+
+    private void ConvertLegacyText(Text legacy)
+    {
+        if (legacy == null) return;
+        if (legacy.GetComponent<TextMeshProUGUI>() != null) return;
+
+        GameObject target = legacy.gameObject;
+        string content = legacy.text;
+        int fontSize = legacy.fontSize;
+        Color color = legacy.color;
+        TextAnchor anchor = legacy.alignment;
+        bool raycastTarget = legacy.raycastTarget;
+        FontStyle fontStyle = legacy.fontStyle;
+        float lineSpacing = legacy.lineSpacing;
+        bool wrap = legacy.horizontalOverflow == HorizontalWrapMode.Wrap;
+        bool overflow = legacy.verticalOverflow == VerticalWrapMode.Overflow;
+
+        // 一个 GameObject 只能有一个 Graphic。
+        // 必须先移除旧 Text，再添加 TMP，否则运行时会报
+        // "A GameObject can only contain one 'Graphic' component"。
+        DestroyImmediate(legacy);
+
+        // TMP 在 TMP Settings 尚未加载时会提前 return，自己不一定能补上
+        // CanvasRenderer；这里先确保组件存在。
+        if (target.GetComponent<CanvasRenderer>() == null)
+        {
+            target.AddComponent<CanvasRenderer>();
+        }
+
+        TextMeshProUGUI tmp = target.AddComponent<TextMeshProUGUI>();
+        tmp.font = uiFont;
+        tmp.text = content;
+        tmp.fontSize = fontSize;
+        tmp.color = color;
+        tmp.alignment = ToTmpAlignment(anchor);
+        tmp.raycastTarget = raycastTarget;
+        tmp.enableWordWrapping = wrap;
+        tmp.overflowMode = overflow ? TextOverflowModes.Overflow : TextOverflowModes.Truncate;
+        tmp.fontStyle = ToTmpStyle(fontStyle);
+        tmp.lineSpacing = lineSpacing;
+    }
+
     private void BuildHud()
     {
-        uiFont = ResolveFont();
-
         GameObject hudObject = new GameObject("LevelHud", typeof(RectTransform));
         hudObject.transform.SetParent(transform, false);
         RectTransform hudRect = hudObject.GetComponent<RectTransform>();
@@ -153,45 +234,56 @@ public class GameController : MonoBehaviour
         levelText = CreateText(
             "LevelText", hudObject.transform,
             new Vector2(0.5f, 1f), new Vector2(0f, -26f),
-            new Vector2(1000f, 46f), 32, TextAnchor.MiddleCenter);
+            new Vector2(1000f, 46f), 32, TextAlignmentOptions.Center);
 
         targetText = CreateText(
             "TargetText", hudObject.transform,
             new Vector2(0.5f, 1f), new Vector2(0f, -72f),
-            new Vector2(800f, 34f), 22, TextAnchor.MiddleCenter);
+            new Vector2(800f, 34f), 22, TextAlignmentOptions.Center);
 
         hintText = CreateText(
             "HintText", hudObject.transform,
             new Vector2(0.5f, 0f), new Vector2(0f, 26f),
-            new Vector2(1000f, 30f), 20, TextAnchor.MiddleCenter);
+            new Vector2(1000f, 30f), 20, TextAlignmentOptions.Center);
         hintText.color = new Color(1f, 1f, 1f, 0.8f);
         hintText.text = "A / D 或 ← → 移动   ·   按住空格连续射击";
 
         resultText = CreateText(
             "ResultTitle", endPanel,
             new Vector2(0.5f, 0.5f), new Vector2(0f, 168f),
-            new Vector2(1100f, 84f), 46, TextAnchor.MiddleCenter);
+            new Vector2(1100f, 84f), 46, TextAlignmentOptions.Center);
 
         resultSubText = CreateText(
             "ResultSub", endPanel,
             new Vector2(0.5f, 0.5f), new Vector2(0f, 104f),
-            new Vector2(1000f, 42f), 26, TextAnchor.MiddleCenter);
+            new Vector2(1000f, 42f), 26, TextAlignmentOptions.Center);
         resultSubText.color = new Color(1f, 0.95f, 0.75f);
 
-        if (primaryLabel != null && uiFont != null) primaryLabel.font = uiFont;
-        if (exitLabel != null && uiFont != null) exitLabel.font = uiFont;
+        if (primaryLabel != null) primaryLabel.font = uiFont;
+        if (exitLabel != null) exitLabel.font = uiFont;
     }
 
-    private Text CreateText(
+    private void CreateTouchControls()
+    {
+        touchControls = GetComponent<TouchControls>();
+        if (touchControls == null)
+        {
+            touchControls = gameObject.AddComponent<TouchControls>();
+        }
+
+        touchControls.Initialize(transform as RectTransform, uiFont);
+    }
+
+    private TextMeshProUGUI CreateText(
         string name,
         Transform parent,
         Vector2 anchor,
         Vector2 anchoredPosition,
         Vector2 size,
         int fontSize,
-        TextAnchor alignment)
+        TextAlignmentOptions alignment)
     {
-        GameObject textObject = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+        GameObject textObject = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         textObject.transform.SetParent(parent, false);
 
         RectTransform rect = textObject.GetComponent<RectTransform>();
@@ -201,61 +293,88 @@ public class GameController : MonoBehaviour
         rect.anchoredPosition = anchoredPosition;
         rect.sizeDelta = size;
 
-        Text text = textObject.GetComponent<Text>();
-        if (uiFont != null) text.font = uiFont;
+        TextMeshProUGUI text = textObject.GetComponent<TextMeshProUGUI>();
+        text.font = uiFont;
         text.fontSize = fontSize;
         text.alignment = alignment;
         text.color = Color.white;
         text.raycastTarget = false;
-        text.horizontalOverflow = HorizontalWrapMode.Overflow;
-        text.verticalOverflow = VerticalWrapMode.Overflow;
+        text.enableWordWrapping = false;
+        text.overflowMode = TextOverflowModes.Overflow;
 
-        AddOutline(text);
         return text;
     }
 
-    private Font ResolveFont()
+    private IEnumerator ApplyOutlinesWhenReady()
     {
-        try
+        // TMP Settings / 材质在第一帧初始化，过早设置 outline 会访问空材质。
+        for (int i = 0; i < 10 && TMP_Settings.instance == null; i++)
         {
-            Font font = Font.CreateDynamicFontFromOSFont("Microsoft YaHei", 28);
-            if (font != null) return font;
-        }
-        catch (Exception)
-        {
-            // 某些平台没有该字体，继续走后备方案。
+            yield return null;
         }
 
-        try
-        {
-            Font font = Font.CreateDynamicFontFromOSFont("Arial", 28);
-            if (font != null) return font;
-        }
-        catch (Exception)
-        {
-            // 忽略并使用内置字体。
-        }
+        yield return null;
 
-        if (scoreText != null && scoreText.font != null)
+        TextMeshProUGUI[] texts = GetComponentsInChildren<TextMeshProUGUI>(true);
+        for (int i = 0; i < texts.Length; i++)
         {
-            return scoreText.font;
-        }
+            TextMeshProUGUI text = texts[i];
+            if (text == null) continue;
 
-        Font builtin = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        if (builtin == null)
-        {
-            builtin = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            try
+            {
+                text.ForceMeshUpdate();
+                ApplyTmpOutline(text);
+            }
+            catch (Exception)
+            {
+                // 单个文字对象初始化失败不应影响整个关卡启动。
+            }
         }
-        return builtin;
     }
 
-    private static void AddOutline(Text text)
+    private static void ApplyTmpOutline(TMP_Text text)
     {
-        if (text == null || text.GetComponent<Outline>() != null) return;
+        if (text == null) return;
+        text.outlineWidth = 0.12f;
+        text.outlineColor = new Color32(0, 0, 0, 220);
+    }
 
-        Outline outline = text.gameObject.AddComponent<Outline>();
-        outline.effectColor = new Color(0f, 0f, 0f, 0.85f);
-        outline.effectDistance = new Vector2(1.5f, -1.5f);
+    private static TextAlignmentOptions ToTmpAlignment(TextAnchor anchor)
+    {
+        switch (anchor)
+        {
+            case TextAnchor.UpperLeft: return TextAlignmentOptions.TopLeft;
+            case TextAnchor.UpperCenter: return TextAlignmentOptions.Top;
+            case TextAnchor.UpperRight: return TextAlignmentOptions.TopRight;
+            case TextAnchor.MiddleLeft: return TextAlignmentOptions.Left;
+            case TextAnchor.MiddleCenter: return TextAlignmentOptions.Center;
+            case TextAnchor.MiddleRight: return TextAlignmentOptions.Right;
+            case TextAnchor.LowerLeft: return TextAlignmentOptions.BottomLeft;
+            case TextAnchor.LowerCenter: return TextAlignmentOptions.Bottom;
+            case TextAnchor.LowerRight: return TextAlignmentOptions.BottomRight;
+            default: return TextAlignmentOptions.Center;
+        }
+    }
+
+    private static FontStyles ToTmpStyle(FontStyle style)
+    {
+        switch (style)
+        {
+            case FontStyle.Bold: return FontStyles.Bold;
+            case FontStyle.Italic: return FontStyles.Italic;
+            case FontStyle.BoldAndItalic: return FontStyles.Bold | FontStyles.Italic;
+            default: return FontStyles.Normal;
+        }
+    }
+
+    private static void ResizeButton(Button button, Vector2 size, Vector2 position)
+    {
+        if (button == null) return;
+        RectTransform rect = button.transform as RectTransform;
+        if (rect == null) return;
+        rect.sizeDelta = size;
+        rect.anchoredPosition = position;
     }
 
     private IEnumerator BeginGameRoutine()
@@ -278,6 +397,12 @@ public class GameController : MonoBehaviour
         if (hearts != null) hearts.gameObject.SetActive(true);
         if (endPanel != null) endPanel.gameObject.SetActive(false);
         if (hudRoot != null) hudRoot.SetActive(true);
+
+        if (touchControls != null)
+        {
+            touchControls.ReleaseAll();
+            touchControls.SetVisible(true);
+        }
 
         if (playerController != null)
         {
@@ -430,6 +555,11 @@ public class GameController : MonoBehaviour
     {
         if (hudRoot != null) hudRoot.SetActive(false);
         if (hearts != null) hearts.gameObject.SetActive(false);
+        if (touchControls != null)
+        {
+            touchControls.ReleaseAll();
+            touchControls.SetVisible(false);
+        }
     }
 
     private void SetPrimaryLabel(string label)
@@ -471,10 +601,15 @@ public class GameController : MonoBehaviour
 
     private void OnExitClicked()
     {
-#if UNITY_EDITOR
-        EditorApplication.isPlaying = false;
+#if UNITY_WEBGL && !UNITY_EDITOR
+        // WebGL 不能真正退出标签页，按需求打开项目主页。
+        Application.OpenURL("https://66yanggg.github.io");
 #else
         Application.Quit();
+
+#if UNITY_EDITOR
+        EditorApplication.isPlaying = false;
+#endif
 #endif
     }
 }
