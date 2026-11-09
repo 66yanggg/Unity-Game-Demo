@@ -8,8 +8,8 @@ using UnityEngine;
 public class Playercontroller : MonoBehaviour
 {
     [SerializeField] private float speed = 10f;
-    [SerializeField] private float XRange = 17f;
-    [SerializeField] private float fireCooldown = 0.14f;
+    [SerializeField] private float XRange = 15f;
+    [SerializeField] private float fireCooldown = 0.25f;
 
     private float nextFireTime;
     private float fixedZ;

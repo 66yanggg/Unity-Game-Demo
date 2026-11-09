@@ -509,7 +509,7 @@ public class GameController : MonoBehaviour
 
         if (GameFacade.Instance != null)
         {
-            GameFacade.Instance.PlaySound("x_AudioResources/胜利音效", 0.9f);
+            GameFacade.Instance.PlaySound("hachimi live family laughter", 0.9f);
         }
     }
 
@@ -542,7 +542,7 @@ public class GameController : MonoBehaviour
 
         if (GameFacade.Instance != null)
         {
-            GameFacade.Instance.PlaySound("x_AudioResources/失败音效", 0.9f);
+            GameFacade.Instance.PlaySound("haha", 0.9f);
         }
     }
 
